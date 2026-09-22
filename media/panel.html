@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}}; script-src 'nonce-{{nonce}}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="{{styleUri}}" rel="stylesheet" />
+  <title>Tollbooth</title>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="progress" id="progress">Hunk 1 of 1</span>
+    <span class="file-path" id="file-path"></span>
+    <button id="cancel-button" type="button">Cancel</button>
+  </div>
+
+  <div class="editor-scroll" id="editor-scroll" tabindex="0">
+    <pre class="context" id="context-before"></pre>
+    <div class="hunk-target" id="hunk-target"></div>
+    <pre class="context" id="context-after"></pre>
+  </div>
+
+  <div class="status" id="status">Type the highlighted text exactly as shown. Mistakes must be corrected before you can continue.</div>
+
+  <div class="complete-screen" id="complete-screen" hidden>All changes reviewed and applied.</div>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>
