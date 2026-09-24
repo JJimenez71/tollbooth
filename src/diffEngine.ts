@@ -115,10 +115,15 @@ export function diffToHunks(
     originalLineIndex += removedCount;
   }
 
+  // "% of file touched" is meaningless for a small file: rewriting 6 of an 8-line
+  // file is 75%, over the default 70% threshold, yet 6 lines is a perfectly
+  // reasonable typing exercise. Below this floor, only the absolute
+  // maxChangedLines threshold can trigger the size guard's direct-apply bypass.
+  const MIN_LINES_FOR_RATIO_GUARD = 20;
   const stats: DiffStats = {
     totalOriginalLines,
     totalChangedLines,
-    changedRatio: totalOriginalLines === 0 ? (totalChangedLines > 0 ? 1 : 0) : totalChangedLines / totalOriginalLines,
+    changedRatio: totalOriginalLines < MIN_LINES_FOR_RATIO_GUARD ? 0 : totalChangedLines / totalOriginalLines,
   };
 
   return { hunks, stats };

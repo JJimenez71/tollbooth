@@ -4,6 +4,7 @@ import { HostToWebviewMessage, LoadHunkPayload, WebviewToHostMessage } from './t
 
 export interface TollboothPanelCallbacks {
   onHunkComplete(hunkId: string): void;
+  onSkipHunk(hunkId: string): void;
   onCancel(): void;
 }
 
@@ -87,6 +88,9 @@ export class TollboothPanel {
         break;
       case 'hunkComplete':
         this.callbacks.onHunkComplete(message.payload.hunkId);
+        break;
+      case 'skipHunk':
+        this.callbacks.onSkipHunk(message.payload.hunkId);
         break;
       case 'cancelSession':
         this.callbacks.onCancel();

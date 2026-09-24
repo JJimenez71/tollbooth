@@ -43,6 +43,12 @@
           "default": 400,
           "description": "If the diff touches more than this many total lines, skip the typing flow and apply the change directly."
         },
+        "tollbooth.indentStyle": {
+          "type": "string",
+          "enum": ["tabs", "spaces"],
+          "default": "tabs",
+          "description": "Indentation style to normalize AI-proposed content to before diffing and typing, regardless of what the source used."
+        },
         "tollbooth.aiProvider": {
           "type": "string",
           "enum": ["anthropic", "openai"],

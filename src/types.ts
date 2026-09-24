@@ -51,6 +51,9 @@ export type HostToWebviewMessage =
 export type WebviewToHostMessage =
   | { type: 'ready' }
   | { type: 'hunkComplete'; payload: { hunkId: string } }
+  | { type: 'skipHunk'; payload: { hunkId: string } }
   | { type: 'cancelSession' };
 
 export type AiProviderName = 'anthropic' | 'openai';
+
+export type IndentStyle = 'tabs' | 'spaces';

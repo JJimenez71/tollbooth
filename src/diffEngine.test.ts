@@ -95,6 +95,39 @@ describe('diffToHunks', () => {
     expect(hunks[0].targetText).toBe('C');
   });
 
+  it('does not inflate changedRatio to 100% when pasting into an empty file', () => {
+    const original = '';
+    const updated = 'function insertionSort(arr) {\n  return arr;\n}';
+
+    const { stats } = diffToHunks(original, updated, FILE);
+
+    expect(stats.totalOriginalLines).toBe(0);
+    expect(stats.changedRatio).toBe(0);
+    expect(exceedsSizeThreshold(stats, { maxChangedLinesRatio: 0.7, maxChangedLines: 400 })).toBe(false);
+  });
+
+  it('does not trip the ratio guard on a small file even when most of it changes', () => {
+    const original = ['function add(a, b) {', '  let sum = a;', '  sum = sum + b;', '  return sum;', '}'].join('\n');
+    const updated = ['function add(a, b) {', '  return a + b;', '}'].join('\n');
+
+    const { stats } = diffToHunks(original, updated, FILE);
+
+    expect(stats.totalOriginalLines).toBe(5);
+    expect(stats.changedRatio).toBe(0);
+    expect(exceedsSizeThreshold(stats, { maxChangedLinesRatio: 0.7, maxChangedLines: 400 })).toBe(false);
+  });
+
+  it('still applies the ratio guard once the file is large enough for a percentage to be meaningful', () => {
+    const original = Array.from({ length: 25 }, (_, i) => `line${i}`).join('\n');
+    const updated = Array.from({ length: 25 }, (_, i) => (i < 20 ? `CHANGED${i}` : `line${i}`)).join('\n');
+
+    const { stats } = diffToHunks(original, updated, FILE);
+
+    expect(stats.totalOriginalLines).toBe(25);
+    expect(stats.changedRatio).toBeGreaterThan(0.7);
+    expect(exceedsSizeThreshold(stats, { maxChangedLinesRatio: 0.7, maxChangedLines: 400 })).toBe(true);
+  });
+
   it('handles an empty diff with no hunks', () => {
     const text = 'a\nb\nc';
     const { hunks, stats } = diffToHunks(text, text, FILE);

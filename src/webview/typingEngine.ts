@@ -22,11 +22,31 @@ export function isComplete(state: TypingState): boolean {
  * Applies one typed character. A correct match advances the cursor; a
  * mismatch marks the current character incorrect and holds the cursor in
  * place, forcing the user to produce the right character before continuing.
+ *
+ * Special case: pressing Enter on a blank (whitespace-only) line completes
+ * that whole line and moves to the next one. AI output often pads "empty"
+ * lines with invisible trailing whitespace the user has no way to see or
+ * blindly type, so exact-match enforcement is waived for that span only —
+ * it never applies to a line that has real content.
  */
 export function typeChar(state: TypingState, ch: string): TypingState {
   if (isComplete(state)) {
     return state;
   }
+
+  if (ch === '\n') {
+    const lineEnd = nextNewlineIndex(state.targetText, state.cursorIndex);
+    const restOfLine = state.targetText.slice(state.cursorIndex, lineEnd);
+    if (/^[ \t]*$/.test(restOfLine)) {
+      const charStates = state.charStates.slice();
+      const newCursor = lineEnd < state.targetText.length ? lineEnd + 1 : lineEnd;
+      for (let i = state.cursorIndex; i < newCursor; i++) {
+        charStates[i] = 'correct';
+      }
+      return { ...state, charStates, cursorIndex: newCursor };
+    }
+  }
+
   const charStates = state.charStates.slice();
   if (ch === state.targetText[state.cursorIndex]) {
     charStates[state.cursorIndex] = 'correct';
@@ -34,6 +54,11 @@ export function typeChar(state: TypingState, ch: string): TypingState {
   }
   charStates[state.cursorIndex] = 'incorrect';
   return { ...state, charStates };
+}
+
+function nextNewlineIndex(text: string, from: number): number {
+  const idx = text.indexOf('\n', from);
+  return idx === -1 ? text.length : idx;
 }
 
 /**

@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { applyHunk } from './applyEngine';
 import { diffToHunks, exceedsSizeThreshold } from './diffEngine';
-import { Hunk } from './types';
+import { normalizeIndentation } from './indentEngine';
+import { Hunk, IndentStyle } from './types';
 import { TollboothPanel } from './webviewPanel';
 
 export interface SizeGuardSettings {
@@ -12,20 +13,27 @@ export interface SizeGuardSettings {
 export interface ReviewFlowOptions {
   contextLines: number;
   sizeGuard: SizeGuardSettings;
+  indentStyle: IndentStyle;
+  tabSize: number;
 }
 
 /**
  * Diffs `newText` against the document's current content and either starts a
  * typing review session, or — if the diff is too large to be a meaningful
  * typing exercise (§5.3/§7) — applies it directly with a notification.
+ *
+ * `newText`'s indentation is normalized to the configured style first, so
+ * the user always retypes (and the file always receives) their preferred
+ * tabs/spaces regardless of what the AI or clipboard content used.
  */
 export async function startReviewFlow(
   document: vscode.TextDocument,
-  newText: string,
+  rawNewText: string,
   extensionUri: vscode.Uri,
   options: ReviewFlowOptions
 ): Promise<void> {
   const originalText = document.getText();
+  const newText = normalizeIndentation(rawNewText, options.indentStyle, options.tabSize);
   const { hunks, stats } = diffToHunks(originalText, newText, document.uri.fsPath, { contextLines: options.contextLines });
 
   if (hunks.length === 0) {
@@ -61,23 +69,29 @@ export function runReviewSession(document: vscode.TextDocument, topToBottomHunks
   let cursor = 0;
 
   const panel = TollboothPanel.createOrShow(extensionUri, {
-    onHunkComplete: async (hunkId: string) => {
-      const hunk = applyOrder[cursor];
-      if (!hunk || hunk.id !== hunkId) {
-        return;
-      }
-      const result = await applyHunk(document, hunk);
-      if (!result.success) {
-        abort(result.reason);
-        return;
-      }
-      cursor++;
-      await advance();
-    },
+    onHunkComplete: (hunkId: string) => void completeCurrentHunk(hunkId),
+    onSkipHunk: (hunkId: string) => void completeCurrentHunk(hunkId),
     onCancel: () => {
       panel.dispose();
     },
   });
+
+  // Shared by both typed completion and the "apply without typing" skip — either
+  // way, the text written to disk is always hunk.targetText from the host's own
+  // diff data, never anything read back from the webview (§3).
+  async function completeCurrentHunk(hunkId: string): Promise<void> {
+    const hunk = applyOrder[cursor];
+    if (!hunk || hunk.id !== hunkId) {
+      return;
+    }
+    const result = await applyHunk(document, hunk);
+    if (!result.success) {
+      abort(result.reason);
+      return;
+    }
+    cursor++;
+    await advance();
+  }
 
   function abort(reason: ApplyFailureReason | undefined): void {
     vscode.window.showWarningMessage(`Tollbooth: session ended — ${describeFailure(reason)}`);

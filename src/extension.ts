@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AiProviderName, Hunk } from './types';
+import { AiProviderName, Hunk, IndentStyle } from './types';
 import { ReviewFlowOptions, runReviewSession, startReviewFlow } from './sessionController';
 import { createAiClient } from './aiClient';
 
@@ -30,14 +30,17 @@ async function getOrPromptApiKey(context: vscode.ExtensionContext, provider: AiP
   return entered;
 }
 
-function getReviewFlowOptions(): ReviewFlowOptions {
+function getReviewFlowOptions(editor: vscode.TextEditor): ReviewFlowOptions {
   const config = vscode.workspace.getConfiguration('tollbooth');
+  const tabSize = typeof editor.options.tabSize === 'number' ? editor.options.tabSize : 4;
   return {
     contextLines: config.get<number>('contextLines', 2),
     sizeGuard: {
       maxChangedLinesRatio: config.get<number>('maxChangedLinesRatio', 0.7),
       maxChangedLines: config.get<number>('maxChangedLines', 400),
     },
+    indentStyle: config.get<IndentStyle>('indentStyle', 'tabs'),
+    tabSize,
   };
 }
 
@@ -85,7 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      await startReviewFlow(editor.document, clipboardText, context.extensionUri, getReviewFlowOptions());
+      await startReviewFlow(editor.document, clipboardText, context.extensionUri, getReviewFlowOptions(editor));
     })
   );
 
@@ -122,7 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
         async () => {
           try {
             const rewritten = await client.getRewrittenFile(editor.document.getText(), instructions);
-            await startReviewFlow(editor.document, rewritten, context.extensionUri, getReviewFlowOptions());
+            await startReviewFlow(editor.document, rewritten, context.extensionUri, getReviewFlowOptions(editor));
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             vscode.window.showErrorMessage(`Tollbooth: AI request failed — ${message}`);

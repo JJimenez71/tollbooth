@@ -90,4 +90,56 @@ describe('typingEngine', () => {
     const state = initTypingState('');
     expect(isComplete(state)).toBe(true);
   });
+
+  it('lets Enter complete a truly empty line as before (regression)', () => {
+    let state = initTypingState('a\n\nb');
+    state = typeChar(state, 'a');
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(2);
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(3);
+    state = typeChar(state, 'b');
+    expect(isComplete(state)).toBe(true);
+  });
+
+  it('lets Enter complete a line that is only invisible trailing whitespace', () => {
+    let state = initTypingState('a\n   \nb');
+    state = typeChar(state, 'a');
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(2);
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(6);
+    expect(state.charStates.slice(2, 6)).toEqual(['correct', 'correct', 'correct', 'correct']);
+    state = typeChar(state, 'b');
+    expect(isComplete(state)).toBe(true);
+  });
+
+  it('lets Enter complete a whitespace-only line made of tabs', () => {
+    let state = initTypingState('a\n\t\t\nb');
+    state = typeChar(state, 'a');
+    state = typeChar(state, '\n');
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(5);
+  });
+
+  it('does NOT let Enter skip a line that has real content', () => {
+    let state = initTypingState('a\nreal content\nb');
+    state = typeChar(state, 'a');
+    state = typeChar(state, '\n');
+    const beforeCursor = state.cursorIndex;
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(beforeCursor);
+    expect(state.charStates[beforeCursor]).toBe('incorrect');
+  });
+
+  it('requires one Enter per consecutive blank line, not a multi-line skip', () => {
+    let state = initTypingState('a\n\n\nb');
+    state = typeChar(state, 'a');
+    state = typeChar(state, '\n');
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(3);
+    expect(isComplete(state)).toBe(false);
+    state = typeChar(state, '\n');
+    expect(state.cursorIndex).toBe(4);
+  });
 });

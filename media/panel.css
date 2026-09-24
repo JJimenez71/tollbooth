@@ -47,7 +47,8 @@ body {
   max-width: 50%;
 }
 
-button#cancel-button {
+button#cancel-button,
+button#skip-button {
   background: transparent;
   color: var(--vscode-foreground);
   border: 1px solid var(--vscode-button-border, #666);
@@ -56,9 +57,11 @@ button#cancel-button {
   cursor: pointer;
   font-family: inherit;
   font-size: 0.85em;
+  margin-left: 8px;
 }
 
-button#cancel-button:hover {
+button#cancel-button:hover,
+button#skip-button:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
 }
 
@@ -101,7 +104,7 @@ pre.context {
 }
 
 .char.correct {
-  color: var(--vscode-charts-green, #4caf50);
+  color: #5ef27a;
   opacity: 1;
 }
 

@@ -13,6 +13,7 @@ const progressEl = document.getElementById('progress') as HTMLSpanElement;
 const filePathEl = document.getElementById('file-path') as HTMLSpanElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const cancelButton = document.getElementById('cancel-button') as HTMLButtonElement;
+const skipButton = document.getElementById('skip-button') as HTMLButtonElement;
 const completeScreen = document.getElementById('complete-screen') as HTMLDivElement;
 const mainView = document.querySelector('.editor-scroll') as HTMLElement;
 const toolbar = document.querySelector('.toolbar') as HTMLElement;
@@ -120,6 +121,12 @@ editorScroll.addEventListener('click', () => editorScroll.focus());
 
 cancelButton.addEventListener('click', () => {
   vscode.postMessage({ type: 'cancelSession' });
+});
+
+skipButton.addEventListener('click', () => {
+  if (!current) return;
+  statusEl.textContent = 'Applying…';
+  vscode.postMessage({ type: 'skipHunk', payload: { hunkId: current.hunk.id } });
 });
 
 window.addEventListener('message', (event: MessageEvent<HostToWebviewMessage>) => {
