@@ -38,10 +38,33 @@ export interface SizeGuardConfig {
   maxChangedLines: number;
 }
 
+/**
+ * context: unchanged code. accepted: a change already reviewed this session.
+ * removed: an original line the current change deletes. pending: original
+ * code a later change in this session will modify.
+ */
+export type ViewRowKind = 'context' | 'accepted' | 'removed' | 'pending';
+
+export interface ViewRow {
+  kind: ViewRowKind;
+  /** Line number in the file as it reads once the current change is accepted; null for removed lines. */
+  lineNumber: number | null;
+  text: string;
+}
+
+/** The whole file, split around the lines currently being typed. */
+export interface FileView {
+  before: ViewRow[];
+  targetFirstLineNumber: number;
+  after: ViewRow[];
+}
+
 export interface LoadHunkPayload {
   hunk: Hunk;
   index: number;
   total: number;
+  view: FileView;
+  tabSize: number;
 }
 
 export type HostToWebviewMessage =

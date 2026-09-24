@@ -8,13 +8,23 @@
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "tollbooth.reviewChangesForCurrentFile",
         "title": "Tollbooth: Review AI Changes for Current File (from Clipboard)"
+      },
+      {
+        "command": "tollbooth.toggleClaudeReview",
+        "title": "Tollbooth: Toggle Claude Code Review Mode"
+      },
+      {
+        "command": "tollbooth.installClaudeHook",
+        "title": "Tollbooth: Install Claude Code Hook"
       },
       {
         "command": "tollbooth.generateAiReview",
@@ -47,7 +57,7 @@
           "type": "string",
           "enum": ["tabs", "spaces"],
           "default": "tabs",
-          "description": "Indentation style to normalize AI-proposed content to before diffing and typing, regardless of what the source used."
+          "description": "Indentation style for code added to files that have no existing indentation (e.g. empty files). Files with existing indentation always keep their own style."
         },
         "tollbooth.aiProvider": {
           "type": "string",

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { applyEditsToText, hunksToEdits } from './hunkApply';
 import { Hunk } from './types';
 
 export interface ApplyResult {
@@ -7,33 +8,31 @@ export interface ApplyResult {
 }
 
 /**
- * Applies one hunk to the live document and navigates the editor to what was
- * just written. Re-slices the live document at originalRange immediately
- * before editing and refuses to apply if it no longer matches hunk.originalText
- * — the file may have changed elsewhere since the session started (§7).
+ * Writes every accepted hunk to the document in a single WorkspaceEdit, then
+ * selects the changed span. Nothing is written if the document's text differs
+ * at all from `originalText` (the snapshot every hunk's line range was
+ * computed against) — the user may have edited the file mid-session (§7).
  */
-export async function applyHunk(document: vscode.TextDocument, hunk: Hunk): Promise<ApplyResult> {
-  const range = new vscode.Range(new vscode.Position(hunk.originalRange.startLine, 0), new vscode.Position(hunk.originalRange.endLine, 0));
-
-  const liveText = document.getText(range);
-  if (liveText !== hunk.originalText) {
+export async function applyAllHunks(document: vscode.TextDocument, originalText: string, hunks: Hunk[]): Promise<ApplyResult> {
+  const live = await vscode.workspace.openTextDocument(document.uri);
+  if (live.getText() !== originalText) {
     return { success: false, reason: 'stale' };
   }
 
-  const edit = new vscode.WorkspaceEdit();
-  edit.replace(document.uri, range, hunk.targetText);
-  const applied = await vscode.workspace.applyEdit(edit);
-  if (!applied) {
+  const edits = hunksToEdits(originalText, hunks);
+  const workspaceEdit = new vscode.WorkspaceEdit();
+  for (const edit of edits) {
+    workspaceEdit.replace(live.uri, new vscode.Range(live.positionAt(edit.start), live.positionAt(edit.end)), edit.text);
+  }
+  if (!(await vscode.workspace.applyEdit(workspaceEdit))) {
     return { success: false, reason: 'edit-rejected' };
   }
 
-  const insertedEndOffset = document.offsetAt(range.start) + hunk.targetText.length;
-  const insertedEndPosition = document.positionAt(insertedEndOffset);
-  const writtenRange = new vscode.Range(range.start, insertedEndPosition);
-
-  const editor = await vscode.window.showTextDocument(document, { preserveFocus: false });
-  editor.selection = new vscode.Selection(writtenRange.start, writtenRange.end);
-  editor.revealRange(writtenRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  const { changedStart, changedEnd } = applyEditsToText(originalText, edits);
+  const editor = await vscode.window.showTextDocument(live, { preserveFocus: false });
+  const written = new vscode.Range(live.positionAt(changedStart), live.positionAt(changedEnd));
+  editor.selection = new vscode.Selection(written.start, written.end);
+  editor.revealRange(written, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 
   return { success: true };
 }

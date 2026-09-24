@@ -4,16 +4,19 @@ import { DiffOptions, DiffStats, Hunk, LineRange, SizeGuardConfig } from './type
 const DEFAULT_OPTIONS: DiffOptions = { contextLines: 2 };
 
 interface MergedBlock {
-  removed: Change | null;
-  added: Change | null;
+  removedValue: string;
+  removedCount: number;
+  addedValue: string;
+  addedCount: number;
 }
 
 type WalkBlock = { kind: 'context'; change: Change } | { kind: 'change'; merged: MergedBlock };
 
 /**
- * Group diffLines() output into context blocks and changed blocks, merging an
- * adjacent removed+added pair (a "replace") into a single changed block so a
- * modified line reads as one hunk rather than a delete followed by an insert.
+ * Group diffLines() output into context blocks and changed blocks. Any run of
+ * adjacent added/removed chunks (in either order) becomes ONE changed block,
+ * so a modified region is a single hunk rather than separate edits that touch
+ * at the same position.
  */
 function groupChanges(changes: Change[]): WalkBlock[] {
   const blocks: WalkBlock[] = [];
@@ -25,16 +28,19 @@ function groupChanges(changes: Change[]): WalkBlock[] {
       i++;
       continue;
     }
-    const removed = change.removed ? change : null;
-    const added = change.removed ? null : change;
-    const next = changes[i + 1];
-    if (removed && next && next.added) {
-      blocks.push({ kind: 'change', merged: { removed, added: next } });
-      i += 2;
-    } else {
-      blocks.push({ kind: 'change', merged: { removed, added } });
-      i += 1;
+    const merged: MergedBlock = { removedValue: '', removedCount: 0, addedValue: '', addedCount: 0 };
+    while (i < changes.length && (changes[i].added || changes[i].removed)) {
+      const c = changes[i];
+      if (c.removed) {
+        merged.removedValue += c.value;
+        merged.removedCount += c.count ?? 0;
+      } else {
+        merged.addedValue += c.value;
+        merged.addedCount += c.count ?? 0;
+      }
+      i++;
     }
+    blocks.push({ kind: 'change', merged });
   }
   return blocks;
 }
@@ -90,8 +96,7 @@ export function diffToHunks(
       continue;
     }
 
-    const { removed, added } = block.merged;
-    const removedCount = removed?.count ?? 0;
+    const { removedValue, removedCount, addedValue, addedCount } = block.merged;
     const originalRange: LineRange = {
       startLine: originalLineIndex,
       endLine: originalLineIndex + removedCount,
@@ -106,12 +111,12 @@ export function diffToHunks(
       originalRange,
       contextBefore: lastNLines(precedingContext, opts.contextLines),
       contextAfter: firstNLines(followingContext, opts.contextLines),
-      originalText: removed?.value ?? '',
-      targetText: added?.value ?? '',
+      originalText: removedValue,
+      targetText: addedValue,
     };
 
     hunks.push(hunk);
-    totalChangedLines += (removed?.count ?? 0) + (added?.count ?? 0);
+    totalChangedLines += removedCount + addedCount;
     originalLineIndex += removedCount;
   }
 

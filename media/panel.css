@@ -47,6 +47,10 @@ body {
   max-width: 50%;
 }
 
+.toolbar .actions {
+  flex-shrink: 0;
+}
+
 button#cancel-button,
 button#skip-button {
   background: transparent;
@@ -67,35 +71,91 @@ button#skip-button:hover {
 
 .editor-scroll {
   flex: 1;
-  overflow-y: auto;
-  padding: 16px 24px 40px;
+  overflow: auto;
+  padding: 8px 0 40px;
 }
 
 .editor-scroll:focus {
   outline: none;
 }
 
-pre.context {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--vscode-editorLineNumber-foreground, #888);
-  opacity: 0.65;
+.code {
+  display: inline-block;
+  min-width: 100%;
   line-height: 1.5;
 }
 
-.hunk-target {
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.5;
-  padding: 2px 0;
-  margin: 2px 0;
-  border-left: 3px solid var(--vscode-textLink-foreground, #3794ff);
-  padding-left: 8px;
+.row {
+  display: flex;
+  min-height: 1.5em;
+  white-space: pre;
+}
+
+.row .ln {
+  flex: 0 0 auto;
+  width: var(--gutter-width, 4ch);
+  box-sizing: content-box;
+  padding: 0 12px 0 8px;
+  text-align: right;
+  color: var(--vscode-editorLineNumber-foreground, #858585);
+  user-select: none;
+}
+
+.row .src {
+  flex: 1;
+  padding: 0 24px 0 8px;
+  border-left: 3px solid transparent;
+}
+
+.row.context .src {
+  opacity: 0.8;
+}
+
+.row.accepted .src {
+  border-left-color: var(--vscode-editorGutter-addedBackground, #587c0c);
+}
+
+.row.pending .src {
+  border-left-color: var(--vscode-editorGutter-modifiedBackground, #0c7d9d);
+  opacity: 0.8;
+}
+
+.row.removed .ln::before {
+  content: '−';
+}
+
+.row.removed .src {
+  color: var(--vscode-errorForeground, #f14c4c);
+  text-decoration: line-through;
+  opacity: 0.75;
+  border-left-color: var(--vscode-errorForeground, #f14c4c);
+  background: rgba(241, 76, 76, 0.08);
+}
+
+.row.target .ln {
+  color: var(--vscode-editorLineNumber-activeForeground, #c6c6c6);
+}
+
+.row.target .src {
+  border-left-color: var(--vscode-textLink-foreground, #3794ff);
+  background: rgba(55, 148, 255, 0.06);
+}
+
+.row.note .src {
+  font-style: italic;
+  opacity: 0.8;
 }
 
 .char {
   position: relative;
+}
+
+.char.newline {
+  opacity: 0.3;
+}
+
+.char.newline.correct {
+  opacity: 0.6;
 }
 
 .char.pending {

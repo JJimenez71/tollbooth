@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
-import { applyHunk } from './applyEngine';
+import { applyAllHunks, ApplyResult } from './applyEngine';
 import { diffToHunks, exceedsSizeThreshold } from './diffEngine';
-import { normalizeIndentation } from './indentEngine';
-import { Hunk, IndentStyle } from './types';
+import { buildFileView } from './fileView';
+import { placeSnippet, PlacementMode } from './snippetPlacement';
+import { Hunk, IndentStyle, LineRange } from './types';
 import { TollboothPanel } from './webviewPanel';
 
 export interface SizeGuardSettings {
@@ -13,118 +14,169 @@ export interface SizeGuardSettings {
 export interface ReviewFlowOptions {
   contextLines: number;
   sizeGuard: SizeGuardSettings;
-  indentStyle: IndentStyle;
+  fallbackIndentStyle: IndentStyle;
   tabSize: number;
+  mode: PlacementMode;
+  selection?: LineRange;
+  cursor: { line: number; character: number };
 }
 
 /**
- * Diffs `newText` against the document's current content and either starts a
- * typing review session, or — if the diff is too large to be a meaningful
- * typing exercise (§5.3/§7) — applies it directly with a notification.
- *
- * `newText`'s indentation is normalized to the configured style first, so
- * the user always retypes (and the file always receives) their preferred
- * tabs/spaces regardless of what the AI or clipboard content used.
+ * Places the proposed code into the file (only the region it belongs to can
+ * change), diffs the result against the file, and starts a typing review of
+ * the resulting hunks.
  */
 export async function startReviewFlow(
   document: vscode.TextDocument,
-  rawNewText: string,
+  proposedSource: string,
   extensionUri: vscode.Uri,
   options: ReviewFlowOptions
 ): Promise<void> {
   const originalText = document.getText();
-  const newText = normalizeIndentation(rawNewText, options.indentStyle, options.tabSize);
-  const { hunks, stats } = diffToHunks(originalText, newText, document.uri.fsPath, { contextLines: options.contextLines });
+  const placement = placeSnippet({
+    originalText,
+    snippetText: proposedSource,
+    mode: options.mode,
+    selection: options.selection,
+    cursor: options.cursor,
+    fallbackIndentStyle: options.fallbackIndentStyle,
+    tabSize: options.tabSize,
+  });
+  if (!placement) {
+    vscode.window.showErrorMessage('Tollbooth: the proposed text contains no code.');
+    return;
+  }
 
+  const { hunks, stats } = diffToHunks(originalText, placement.proposedText, document.uri.fsPath, {
+    contextLines: options.contextLines,
+  });
   if (hunks.length === 0) {
     vscode.window.showInformationMessage('Tollbooth: no changes detected.');
     return;
   }
 
+  if (!placement.anchored) {
+    vscode.window.showInformationMessage(
+      `Tollbooth: no matching code found, so this will be inserted as new code at line ${placement.region.startLine + 1}. ` +
+        'To replace specific code instead, select it before running the command.'
+    );
+  }
+
   if (exceedsSizeThreshold(stats, options.sizeGuard)) {
-    const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(originalText.length));
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(document.uri, fullRange, newText);
-    await vscode.workspace.applyEdit(edit);
-    vscode.window.showInformationMessage('Tollbooth: this change is too large to be a useful typing review, so it was applied directly.');
+    const choice = await vscode.window.showWarningMessage(
+      `Tollbooth: this change touches ${stats.totalChangedLines} lines, too many for a useful typing review. Apply it without typing?`,
+      { modal: true },
+      'Apply Without Typing'
+    );
+    if (choice === 'Apply Without Typing') {
+      reportFailure(await applyAllHunks(document, originalText, hunks));
+    }
     return;
   }
 
-  runReviewSession(document, hunks, extensionUri);
+  reviewAndApply(document, originalText, hunks, extensionUri, options.tabSize);
+}
+
+/** Review session whose result is written to `document` in one edit at the end. */
+export function reviewAndApply(document: vscode.TextDocument, originalText: string, hunks: Hunk[], extensionUri: vscode.Uri, tabSize: number): void {
+  runReviewSession({
+    originalText,
+    hunks,
+    extensionUri,
+    tabSize,
+    onAllAccepted: async (ordered) => {
+      const result = await applyAllHunks(document, originalText, ordered);
+      reportFailure(result);
+      return result.success;
+    },
+  });
+}
+
+export interface ReviewSessionOptions {
+  originalText: string;
+  hunks: Hunk[];
+  extensionUri: vscode.Uri;
+  tabSize: number;
+  panelTitle?: string;
+  /** Runs once every hunk is accepted. Resolve true to show the completion screen, false to close the panel. */
+  onAllAccepted: (orderedHunks: Hunk[]) => Promise<boolean>;
+  /** Runs if the user cancels or closes the panel before accepting every hunk. */
+  onRejected?: () => void;
+}
+
+export interface ReviewSession {
+  /** Closes the panel without counting as a rejection. */
+  close(): void;
 }
 
 /**
- * Drives one review session end to end: presents typed hunks in the webview,
- * applies each via WorkspaceEdit on completion, auto-applies pure-deletion
- * hunks with no typing step, and aborts the whole session (per §7) if a
- * staleness check ever fails.
- *
- * `topToBottomHunks` must be in natural document order; this walks them
- * bottom-to-top so an earlier apply never invalidates a later hunk's
- * originalRange (§4's accepted MVP compromise).
+ * Walks the hunks top-to-bottom. Completing (or skipping) a hunk only records
+ * it as accepted; nothing happens to the file until `onAllAccepted`, so
+ * cancelling at any point is a no-op on disk.
  */
-export function runReviewSession(document: vscode.TextDocument, topToBottomHunks: Hunk[], extensionUri: vscode.Uri): TollboothPanel {
-  const applyOrder = [...topToBottomHunks].reverse();
-  const total = applyOrder.length;
+export function runReviewSession(options: ReviewSessionOptions): ReviewSession {
+  const { originalText, tabSize } = options;
+  const ordered = [...options.hunks].sort((a, b) => a.originalRange.startLine - b.originalRange.startLine);
   let cursor = 0;
+  let settled = false;
 
-  const panel = TollboothPanel.createOrShow(extensionUri, {
-    onHunkComplete: (hunkId: string) => void completeCurrentHunk(hunkId),
-    onSkipHunk: (hunkId: string) => void completeCurrentHunk(hunkId),
-    onCancel: () => {
-      panel.dispose();
+  const panel = TollboothPanel.createOrShow(
+    options.extensionUri,
+    {
+      onHunkComplete: (hunkId: string) => void accept(hunkId),
+      onSkipHunk: (hunkId: string) => void accept(hunkId),
+      onCancel: () => panel.dispose(),
+      onDisposed: () => {
+        if (!settled) {
+          settled = true;
+          options.onRejected?.();
+        }
+      },
     },
-  });
+    options.panelTitle
+  );
 
-  // Shared by both typed completion and the "apply without typing" skip — either
-  // way, the text written to disk is always hunk.targetText from the host's own
-  // diff data, never anything read back from the webview (§3).
-  async function completeCurrentHunk(hunkId: string): Promise<void> {
-    const hunk = applyOrder[cursor];
-    if (!hunk || hunk.id !== hunkId) {
-      return;
-    }
-    const result = await applyHunk(document, hunk);
-    if (!result.success) {
-      abort(result.reason);
+  function loadCurrent(): void {
+    panel.loadHunk({
+      hunk: ordered[cursor],
+      index: cursor,
+      total: ordered.length,
+      view: buildFileView(originalText, ordered, cursor),
+      tabSize,
+    });
+  }
+
+  async function accept(hunkId: string): Promise<void> {
+    if (settled || ordered[cursor]?.id !== hunkId) {
       return;
     }
     cursor++;
-    await advance();
-  }
-
-  function abort(reason: ApplyFailureReason | undefined): void {
-    vscode.window.showWarningMessage(`Tollbooth: session ended — ${describeFailure(reason)}`);
-    panel.dispose();
-  }
-
-  async function advance(): Promise<void> {
-    while (cursor < total) {
-      const hunk = applyOrder[cursor];
-      if (hunk.targetText.length === 0) {
-        const result = await applyHunk(document, hunk);
-        if (!result.success) {
-          abort(result.reason);
-          return;
-        }
-        cursor++;
-        continue;
-      }
-      panel.loadHunk({ hunk, index: cursor, total });
+    if (cursor < ordered.length) {
+      loadCurrent();
       return;
     }
-    panel.sessionComplete();
+    settled = true;
+    if (await options.onAllAccepted(ordered)) {
+      panel.sessionComplete();
+    } else {
+      panel.dispose();
+    }
   }
 
-  void advance();
-  return panel;
+  loadCurrent();
+  return {
+    close: () => {
+      settled = true;
+      panel.dispose();
+    },
+  };
 }
 
-type ApplyFailureReason = 'stale' | 'edit-rejected';
-
-function describeFailure(reason: ApplyFailureReason | undefined): string {
-  if (reason === 'stale') {
-    return 'the file changed elsewhere since this session started.';
-  }
-  return 'the edit could not be applied.';
+function reportFailure(result: ApplyResult): void {
+  if (result.success) return;
+  const why =
+    result.reason === 'stale'
+      ? 'the file changed while you were reviewing, so nothing was written. Run Tollbooth again on the current file.'
+      : 'VS Code rejected the edit, so nothing was written.';
+  vscode.window.showWarningMessage(`Tollbooth: ${why}`);
 }

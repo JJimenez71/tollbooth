@@ -6,6 +6,8 @@ export interface TollboothPanelCallbacks {
   onHunkComplete(hunkId: string): void;
   onSkipHunk(hunkId: string): void;
   onCancel(): void;
+  /** Fires exactly once when the panel goes away, however that happens. */
+  onDisposed(): void;
 }
 
 function getNonce(): string {
@@ -24,13 +26,14 @@ export class TollboothPanel {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly callbacks: TollboothPanelCallbacks;
   private ready = false;
+  private disposed = false;
   private pendingMessage: HostToWebviewMessage | undefined;
 
-  public static createOrShow(extensionUri: vscode.Uri, callbacks: TollboothPanelCallbacks): TollboothPanel {
+  public static createOrShow(extensionUri: vscode.Uri, callbacks: TollboothPanelCallbacks, title = 'Tollbooth: Review Changes'): TollboothPanel {
     if (TollboothPanel.currentPanel) {
       TollboothPanel.currentPanel.dispose();
     }
-    const panel = vscode.window.createWebviewPanel('tollbooth', 'Tollbooth: Review Changes', vscode.ViewColumn.Beside, {
+    const panel = vscode.window.createWebviewPanel('tollbooth', title, vscode.ViewColumn.Beside, {
       enableScripts: true,
       retainContextWhenHidden: false,
       localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist', 'media')],
@@ -58,6 +61,10 @@ export class TollboothPanel {
   }
 
   public dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
     if (TollboothPanel.currentPanel === this) {
       TollboothPanel.currentPanel = undefined;
     }
@@ -66,6 +73,7 @@ export class TollboothPanel {
       const d = this.disposables.pop();
       d?.dispose();
     }
+    this.callbacks.onDisposed();
   }
 
   private post(message: HostToWebviewMessage): void {

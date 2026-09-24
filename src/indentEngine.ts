@@ -1,39 +1,74 @@
 import { IndentStyle } from './types';
 
-function leadingWhitespaceWidth(leading: string, tabSize: number): number {
+export function leadingWhitespace(line: string): string {
+  const match = line.match(/^[\t ]*/);
+  return match ? match[0] : '';
+}
+
+export function indentWidth(whitespace: string, tabSize: number): number {
   let width = 0;
-  for (const ch of leading) {
+  for (const ch of whitespace) {
     width += ch === '\t' ? tabSize : 1;
   }
   return width;
 }
 
-function buildIndent(width: number, style: IndentStyle, tabSize: number): string {
+export function buildIndent(width: number, style: IndentStyle, tabSize: number): string {
+  if (width <= 0) {
+    return '';
+  }
   if (style === 'spaces') {
     return ' '.repeat(width);
   }
-  const tabs = Math.floor(width / tabSize);
-  const remainder = width % tabSize;
-  return '\t'.repeat(tabs) + ' '.repeat(remainder);
+  return '\t'.repeat(Math.floor(width / tabSize)) + ' '.repeat(width % tabSize);
+}
+
+function isBlank(line: string): boolean {
+  return line.trim().length === 0;
+}
+
+/** Block-comment continuation lines (" * foo") are offset by one column by
+ * convention and would otherwise masquerade as a 1-space indent unit. */
+function isCommentContinuation(line: string): boolean {
+  return /^\s*\*/.test(line);
+}
+
+/** Returns the style most indented lines use, or null if nothing is indented. */
+export function detectIndentStyle(lines: string[]): IndentStyle | null {
+  let tabs = 0;
+  let spaces = 0;
+  for (const line of lines) {
+    if (isBlank(line)) continue;
+    if (line.startsWith('\t')) tabs++;
+    else if (line.startsWith(' ') && !isCommentContinuation(line)) spaces++;
+  }
+  if (tabs === 0 && spaces === 0) return null;
+  return tabs >= spaces ? 'tabs' : 'spaces';
 }
 
 /**
- * Rewrites each line's leading whitespace to the requested indent style,
- * preserving the same visual column width. Only touches indentation —
- * whitespace elsewhere on a line (inside strings, alignment, etc.) is left
- * alone.
+ * Infers the width of one indentation level as the most common positive step
+ * between consecutive non-blank lines. Returns null when there is no evidence.
  */
-export function normalizeIndentation(text: string, style: IndentStyle, tabSize: number): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      const match = line.match(/^[\t ]*/);
-      const leading = match ? match[0] : '';
-      if (leading.length === 0) {
-        return line;
-      }
-      const width = leadingWhitespaceWidth(leading, tabSize);
-      return buildIndent(width, style, tabSize) + line.slice(leading.length);
-    })
-    .join('\n');
+export function detectIndentUnit(lines: string[], tabSize: number): number | null {
+  const counts = new Map<number, number>();
+  let previous: number | null = null;
+  for (const line of lines) {
+    if (isBlank(line) || isCommentContinuation(line)) continue;
+    const width = indentWidth(leadingWhitespace(line), tabSize);
+    if (previous !== null && width > previous) {
+      const step = width - previous;
+      counts.set(step, (counts.get(step) ?? 0) + 1);
+    }
+    previous = width;
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [step, count] of counts) {
+    if (count > bestCount || (count === bestCount && best !== null && step < best)) {
+      best = step;
+      bestCount = count;
+    }
+  }
+  return best;
 }

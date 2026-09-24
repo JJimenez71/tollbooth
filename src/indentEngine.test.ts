@@ -1,38 +1,60 @@
-import { normalizeIndentation } from './indentEngine';
+import { buildIndent, detectIndentStyle, detectIndentUnit, indentWidth } from './indentEngine';
 
-describe('normalizeIndentation', () => {
-  it('converts space indentation to tabs', () => {
-    const input = 'function f() {\n    return 1;\n}';
-    expect(normalizeIndentation(input, 'tabs', 4)).toBe('function f() {\n\treturn 1;\n}');
+describe('detectIndentStyle', () => {
+  it('detects spaces', () => {
+    expect(detectIndentStyle(['function f() {', '  return 1;', '}'])).toBe('spaces');
   });
 
-  it('converts tab indentation to spaces', () => {
-    const input = 'function f() {\n\treturn 1;\n}';
-    expect(normalizeIndentation(input, 'spaces', 4)).toBe('function f() {\n    return 1;\n}');
+  it('detects tabs', () => {
+    expect(detectIndentStyle(['function f() {', '\treturn 1;', '}'])).toBe('tabs');
   });
 
-  it('handles multiple levels of indentation', () => {
-    const input = 'a\n    b\n        c';
-    expect(normalizeIndentation(input, 'tabs', 4)).toBe('a\n\tb\n\t\tc');
+  it('returns null when nothing is indented, so the user setting can apply', () => {
+    expect(detectIndentStyle(['const a = 1;', '', 'const b = 2;'])).toBeNull();
   });
 
-  it('leaves lines with no leading whitespace untouched', () => {
-    const input = 'const x = 1;\nconst y = 2;';
-    expect(normalizeIndentation(input, 'tabs', 2)).toBe(input);
+  it('ignores block-comment continuation lines', () => {
+    expect(detectIndentStyle(['/**', ' * doc', ' */', 'function f() {', '\treturn 1;', '}'])).toBe('tabs');
+  });
+});
+
+describe('detectIndentUnit', () => {
+  it('finds a 2-space unit', () => {
+    expect(detectIndentUnit(['a {', '  b {', '    c;', '  }', '}'], 4)).toBe(2);
   });
 
-  it('preserves a partial indent remainder that does not divide evenly', () => {
-    const input = '  a';
-    expect(normalizeIndentation(input, 'tabs', 4)).toBe('  a');
+  it('finds a 4-space unit', () => {
+    expect(detectIndentUnit(['a {', '    b {', '        c;', '    }', '}'], 2)).toBe(4);
   });
 
-  it('does not touch whitespace after the leading indentation', () => {
-    const input = '  const x = 1;   // comment';
-    expect(normalizeIndentation(input, 'spaces', 2)).toBe(input);
+  it('measures tabs in columns of tabSize', () => {
+    expect(detectIndentUnit(['a {', '\tb;', '}'], 4)).toBe(4);
   });
 
-  it('is idempotent when already in the target style', () => {
-    const input = '\t\tfoo';
-    expect(normalizeIndentation(input, 'tabs', 4)).toBe(input);
+  it('is not fooled by JSDoc continuation lines', () => {
+    expect(detectIndentUnit(['/**', ' * a', ' * b', ' */', 'f() {', '  x;', '}'], 4)).toBe(2);
+  });
+
+  it('returns null with no indentation evidence', () => {
+    expect(detectIndentUnit(['a;', 'b;'], 4)).toBeNull();
+  });
+});
+
+describe('indentWidth / buildIndent', () => {
+  it('counts tabs as tabSize columns', () => {
+    expect(indentWidth('\t  ', 4)).toBe(6);
+  });
+
+  it('builds tab indentation with a space remainder', () => {
+    expect(buildIndent(6, 'tabs', 4)).toBe('\t  ');
+  });
+
+  it('builds space indentation', () => {
+    expect(buildIndent(4, 'spaces', 4)).toBe('    ');
+  });
+
+  it('returns empty for zero or negative widths', () => {
+    expect(buildIndent(0, 'tabs', 4)).toBe('');
+    expect(buildIndent(-2, 'spaces', 4)).toBe('');
   });
 });

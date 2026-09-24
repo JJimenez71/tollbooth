@@ -56,11 +56,23 @@ async function main() {
     logLevel: "info",
   });
 
+  // Standalone script Claude Code runs as a PreToolUse hook (outside VS Code).
+  const hookCtx = await esbuild.context({
+    entryPoints: ["src/claudeHook/hookScript.ts"],
+    bundle: true,
+    format: "cjs",
+    minify: production,
+    platform: "node",
+    outfile: "dist/claude-hook.js",
+    logLevel: "info",
+  });
+
+  const contexts = [extensionCtx, webviewCtx, hookCtx];
   if (watch) {
-    await Promise.all([extensionCtx.watch(), webviewCtx.watch()]);
+    await Promise.all(contexts.map((ctx) => ctx.watch()));
   } else {
-    await Promise.all([extensionCtx.rebuild(), webviewCtx.rebuild()]);
-    await Promise.all([extensionCtx.dispose(), webviewCtx.dispose()]);
+    await Promise.all(contexts.map((ctx) => ctx.rebuild()));
+    await Promise.all(contexts.map((ctx) => ctx.dispose()));
   }
 }
 
