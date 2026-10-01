@@ -1,4 +1,4 @@
-import { backspace, initTypingState, isComplete, typeChar, TypingState } from './typingEngine';
+import { backspace, initTypingState, isComplete, oddIndentSpaces, typeChar, TypingState } from './typingEngine';
 import { HostToWebviewMessage, LoadHunkPayload, ViewRow, WebviewToHostMessage } from '../types';
 
 declare function acquireVsCodeApi(): { postMessage(message: WebviewToHostMessage): void };
@@ -21,6 +21,8 @@ const toolbar = document.querySelector('.toolbar') as HTMLElement;
 let current: LoadHunkPayload | null = null;
 let typing: TypingState = initTypingState('');
 let submitted = false;
+/** Target indices that get a space marker; empty in skip mode, where indentation isn't typed. */
+let markedSpaces = new Set<number>();
 
 // Typing only verifies attention; the host writes its own copy of the text
 // (with the file's real line endings), so CRLF can be simplified here.
@@ -66,7 +68,12 @@ function lastLineNumber(payload: LoadHunkPayload): number {
 function loadHunk(payload: LoadHunkPayload): void {
   current = payload;
   submitted = false;
-  typing = initTypingState(forDisplay(payload.hunk.targetText));
+  typing = initTypingState(forDisplay(payload.hunk.targetText), {
+    tabSize: payload.tabSize,
+    indentUnit: payload.indentUnit,
+    skipIndentation: payload.skipIndentation,
+  });
+  markedSpaces = payload.skipIndentation ? new Set() : oddIndentSpaces(typing.targetText, payload.tabSize, payload.indentUnit);
 
   codeEl.style.setProperty('tab-size', String(payload.tabSize));
   codeEl.style.setProperty('--gutter-width', `${String(lastLineNumber(payload)).length}ch`);
@@ -79,7 +86,9 @@ function loadHunk(payload: LoadHunkPayload): void {
   progressEl.textContent = `Change ${payload.index + 1} of ${payload.total}`;
   statusEl.textContent = isDeletion()
     ? 'The struck-through lines will be removed. Press Enter to confirm.'
-    : 'Type the highlighted lines exactly as shown. Mistakes must be corrected before you can continue.';
+    : payload.skipIndentation
+      ? 'Type the highlighted lines exactly as shown; indentation is filled in for you. Mistakes must be corrected before you can continue.'
+      : 'Type the highlighted lines exactly as shown; Tab types one indent level. Mistakes must be corrected before you can continue.';
 
   renderTarget();
   editorScroll.focus();
@@ -102,7 +111,8 @@ function renderTarget(): void {
   for (let i = 0; i < target.length; i++) {
     const span = document.createElement('span');
     const isNewline = target[i] === '\n';
-    span.className = `char ${typing.charStates[i]}${isNewline ? ' newline' : ''}${i === typing.cursorIndex ? ' cursor' : ''}`;
+    const whitespace = target[i] === '\t' ? ' ws tab' : markedSpaces.has(i) ? ' ws space' : '';
+    span.className = `char ${typing.charStates[i]}${isNewline ? ' newline' : ''}${whitespace}${i === typing.cursorIndex ? ' cursor' : ''}`;
     span.textContent = isNewline ? '↵' : target[i];
     line.appendChild(span);
     if (isNewline) {

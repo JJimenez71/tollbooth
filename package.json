@@ -59,6 +59,16 @@
           "default": "tabs",
           "description": "Indentation style for code added to files that have no existing indentation (e.g. empty files). Files with existing indentation always keep their own style."
         },
+        "tollbooth.indentationTyping": {
+          "type": "string",
+          "enum": ["tabKey", "skip"],
+          "enumDescriptions": [
+            "At the start of a line, Tab types one indentation level whether the file uses tabs or spaces. Space still types single spaces.",
+            "Leading indentation is filled in automatically; typing starts at the first non-whitespace character of each line."
+          ],
+          "default": "tabKey",
+          "description": "How indentation is typed in the Tollbooth typing window. Either way, the file receives its real indentation."
+        },
         "tollbooth.aiProvider": {
           "type": "string",
           "enum": ["anthropic", "openai"],

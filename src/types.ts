@@ -65,6 +65,9 @@ export interface LoadHunkPayload {
   total: number;
   view: FileView;
   tabSize: number;
+  /** Columns in one indentation level of this file. */
+  indentUnit: number;
+  skipIndentation: boolean;
 }
 
 export type HostToWebviewMessage =

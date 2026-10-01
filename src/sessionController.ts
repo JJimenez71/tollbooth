@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { applyAllHunks, ApplyResult } from './applyEngine';
 import { diffToHunks, exceedsSizeThreshold } from './diffEngine';
 import { buildFileView } from './fileView';
+import { detectIndentUnit } from './indentEngine';
+import { splitLinesWithTerminators, stripTerminator } from './textLines';
 import { placeSnippet, PlacementMode } from './snippetPlacement';
 import { Hunk, IndentStyle, LineRange } from './types';
 import { TollboothPanel } from './webviewPanel';
@@ -117,6 +119,10 @@ export interface ReviewSession {
 export function runReviewSession(options: ReviewSessionOptions): ReviewSession {
   const { originalText, tabSize } = options;
   const ordered = [...options.hunks].sort((a, b) => a.originalRange.startLine - b.originalRange.startLine);
+  const linesOf = (text: string) => splitLinesWithTerminators(text).map(stripTerminator);
+  const indentUnit =
+    detectIndentUnit(linesOf(originalText), tabSize) ?? detectIndentUnit(ordered.flatMap((h) => linesOf(h.targetText)), tabSize) ?? tabSize;
+  const skipIndentation = vscode.workspace.getConfiguration('tollbooth').get<string>('indentationTyping', 'tabKey') === 'skip';
   let cursor = 0;
   let settled = false;
 
@@ -143,6 +149,8 @@ export function runReviewSession(options: ReviewSessionOptions): ReviewSession {
       total: ordered.length,
       view: buildFileView(originalText, ordered, cursor),
       tabSize,
+      indentUnit,
+      skipIndentation,
     });
   }
 
